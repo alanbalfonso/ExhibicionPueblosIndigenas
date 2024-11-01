@@ -6,13 +6,13 @@ SoftwareSerial mySerial(10, 11); // RX, TX
 DFRobotDFPlayerMini myDFPlayer;
 
 // Variables de control
-const int num_ventanas = 26;          // Número de ventanas
+const int numVentanas = 26;          // Número de ventanas
 int idiomaSeleccionado = 0;           // 0: idioma 1, 1: idioma 2
-bool ventanasAbiertas[num_ventanas];  // Estado de cada ventana
-bool audioEnReproduccion[num_ventanas];
+bool ventanasAbiertas[numVentanas];  // Estado de cada ventana (si es true la ventana esta abierta)
+bool audioEnReproduccion[numVentanas];  // Estado del audio (si es true se esta reproduciendo)
 
 // Pines
-int pines_ventanas[num_ventanas] = {2, 3, 4, /*... hasta 27*/};
+int pines_ventanas[numVentanas] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
 int botonIdioma = 28;
 int botonApagado = 29;
 
@@ -31,7 +31,7 @@ void setup() {
   // Configuración de pines
   pinMode(botonIdioma, INPUT_PULLUP);
   pinMode(botonApagado, INPUT_PULLUP);
-  for (int i = 0; i < num_ventanas; i++) {
+  for (int i = 0; i < numVentanas; i++) {
     pinMode(pines_ventanas[i], INPUT_PULLUP);
     ventanasAbiertas[i] = false;
     audioEnReproduccion[i] = false;
@@ -46,7 +46,7 @@ void loop() {
   }
 
   // Leer el estado de cada ventana
-  for (int i = 0; i < num_ventanas; i++) {
+  for (int i = 0; i < numVentanas; i++) {
     bool ventanaAbierta = digitalRead(pines_ventanas[i]) == LOW;
     
     if (ventanaAbierta && !ventanasAbiertas[i]) {
@@ -68,7 +68,7 @@ void loop() {
 }
 
 void reproducirAudio(int ventana) {
-  int pista = (idiomaSeleccionado * num_ventanas) + ventana + 1; // Asignar pista según idioma y ventana
+  int pista = (idiomaSeleccionado * numVentanas) + ventana + 1; // Asignar pista según idioma y ventana
   myDFPlayer.play(pista);
   audioEnReproduccion[ventana] = true;
 }
@@ -79,7 +79,7 @@ void detenerAudio(int ventana) {
 }
 
 void reiniciarSistema() {
-  for (int i = 0; i < num_ventanas; i++) {
+  for (int i = 0; i < numVentanas; i++) {
     if (audioEnReproduccion[i]) {
       detenerAudio(i);
     }
