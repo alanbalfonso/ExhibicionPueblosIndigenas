@@ -1,253 +1,288 @@
-#include <DFRobotDFPlayerMini.h>
+#include <DFRobotDFPlayerMini.h> // Biblioteca para el reproductor MP3
 #include <SoftwareSerial.h>
-#include <Adafruit_NeoPixel.h>
+#include <Adafruit_NeoPixel.h> // Biblioteca para la tira LED
 
 // Configuración de pines
-#define LED_PIN 6
-#define LED_COUNT 60
-#define STOP_BUTTON_PIN 2 // Botón para detener audio
-#define SPANISH_BUTTON_PIN 3 // Botón para español
-#define YOKOTAN_BUTTON_PIN 4 // Botón para yokot'an
+#define PIN_LED 6
+#define CANTIDAD_LEDS 60 // Ajusta según tu tira LED
+#define PIN_BOTON_DETENER 2 // Botón para detener audio
+#define PIN_BOTON_ESPANOL 3 // Botón para español
+#define PIN_BOTON_YOKOTAN 4 // Botón para yokot'an
 
 // Definición de ventanillas
-#define NUM_WINDOWS 22
-const int windowPins[NUM_WINDOWS] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 
+#define NUM_VENTANAS 22
+const int pinesVentanillas[NUM_VENTANAS] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 
                                     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43};
 
 // Configuración del reproductor MP3
-SoftwareSerial mySoftwareSerial(10, 11);
-DFRobotDFPlayerMini myDFPlayer;
+SoftwareSerial comunicacionSerial(10, 11); // RX, TX
+DFRobotDFPlayerMini reproductorMP3;
 
-Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel tiraLED(CANTIDAD_LEDS, PIN_LED, NEO_GRB + NEO_KHZ800);
 
-enum SystemState {
-  STATE_IDLE,
-  STATE_PLAYING,
-  STATE_STOPPED
+// Estados del sistema
+enum EstadoSistema {
+  ESTADO_INACTIVO,
+  ESTADO_REPRODUCIENDO,
+  ESTADO_DETENIDO
 };
 
-SystemState currentState = STATE_IDLE;
+EstadoSistema estadoActual = ESTADO_INACTIVO;
 
-int audioQueue[10];
-int queueSize = 0;
-int currentPlaying = -1;
-bool spanishLanguage = true; // true: español, false: yokot'an
+// Variables para gestión de cola
+int colaAudios[10]; // Cola para audios (ajusta tamaño según necesidad)
+int tamanoCola = 0;
+int audioActual = -1; // no se está reproduciendo nada
 
-const int windowGroups[][5] = {
-  {0, 1, 2, 3, 4},   // Grupo 1
-  {5, 6, 7, 8, 9},   // Grupo 2
-  {10, 11, 12, 13},  // Grupo 3
-  {14, 15, 16, 17},  // Grupo 4
-  {18, 19, 20, 21}   // Grupo 5
+// Variables de idioma
+bool idiomaEspanol = true; // true: español, false: yokot'an
+
+// Grupos de ventanillas y sus colores
+const int gruposVentanillas[][5] = {
+  {0, 1, 2, 3, 4},   // Lengua Chol
+  {5, 6, 7, 8, 9},   // Lengua Yoko'tan
+  {10, 11, 12, 13},  // Lengua Nahuatl
+  {14, 15, 16, 17},  // Lengua Tzeltales
+  {18, 19, 20, 21}   // Lengua Zoque
 };
 
-const uint32_t groupColors[] = {
-  strip.Color(255, 0, 0),
-  strip.Color(0, 255, 0),
-  strip.Color(0, 0, 255),
-  strip.Color(255, 255, 0),
-  strip.Color(255, 0, 255)
+const uint32_t coloresGrupos[] = {
+  tiraLED.Color(0, 26, 149),    // Azul fuerte para Chol
+  tiraLED.Color(104, 170, 199), // Azul verdoso para Yoko'tan
+  tiraLED.Color(51, 37, 159),   // Morado claro para Nahuatl
+  tiraLED.Color(153, 44, 55),   // Rojo claro para Tzeltales
+  tiraLED.Color(188, 151, 222)  // Rosa para Zoque
 };
 
 void setup() {
   Serial.begin(9600);
-  mySoftwareSerial.begin(9600);
+  comunicacionSerial.begin(9600);
   
-  if (!myDFPlayer.begin(mySoftwareSerial)) {
-    Serial.println(F("Error al inicializar DFPlayer"));
+  // Inicializar reproductor MP3
+  if (!reproductorMP3.begin(comunicacionSerial)) {
+    Serial.println(F("No se pudo inicializar el reproductor MP3:"));
+    Serial.println(F("1. Revisa las conexiones"));
+    Serial.println(F("2. Inserta la tarjeta SD"));
     while(true);
   }
-  Serial.println(F("DFPlayer Mini listo."));
+  Serial.println(F("Reproductor MP3 listo."));
   
-  myDFPlayer.volume(20);
+  reproductorMP3.volume(20); // Volumen ajustable
 
-  for (int i = 0; i < NUM_WINDOWS; i++) {
-    pinMode(windowPins[i], INPUT_PULLUP);
+  // Pines de ventanillas como entradas
+  for (int i = 0; i < NUM_VENTANAS; i++) {
+    pinMode(pinesVentanillas[i], INPUT_PULLUP);
   }
 
-  pinMode(STOP_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(SPANISH_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(YOKOTAN_BUTTON_PIN, INPUT_PULLUP);
+  // Configurar pines de botones
+  pinMode(PIN_BOTON_DETENER, INPUT_PULLUP);
+  pinMode(PIN_BOTON_ESPANOL, INPUT_PULLUP);
+  pinMode(PIN_BOTON_YOKOTAN, INPUT_PULLUP);
 
-  strip.begin();
-  strip.show();
-  updateLanguageLEDs();
+  // Inicializar tira LED
+  tiraLED.begin();
+  tiraLED.show(); // Inicializar todos los píxeles apagados
+  actualizarLEDsIdioma();
 
-  attachInterrupt(digitalPinToInterrupt(STOP_BUTTON_PIN), stopAudio, FALLING);
-  attachInterrupt(digitalPinToInterrupt(SPANISH_BUTTON_PIN), setSpanish, FALLING);
-  attachInterrupt(digitalPinToInterrupt(YOKOTAN_BUTTON_PIN), setYokotan, FALLING);
+  // Configurar interrupciones para botones
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_DETENER), detenerAudio, FALLING);
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_ESPANOL), establecerEspanol, FALLING);
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_YOKOTAN), establecerYokotan, FALLING);
 }
 
 void loop() {
-  checkWindows();
-  manageQueue();
+  verificarVentanillas(); // Estado de ventanillas
+  gestionarCola();       // Gestionar reproducción de audios en cola
   
-  if (currentState == STATE_PLAYING) {
-    theaterChase(strip.Color(127, 127, 127), 50);
+  // Actualizar LEDs según estado
+  if (estadoActual == ESTADO_REPRODUCIENDO) {
+    // Efecto de LEDs durante reproducción
+    efectoTeatro(tiraLED.Color(127, 127, 127), 50);
   } else {
-    updateLanguageLEDs();
+    // Mostrar estado de idioma
+    actualizarLEDsIdioma();
   }
   
-  delay(50);
+  delay(50); // Pequeña pausa para evitar rebotes
 }
 
-// Funciones modificadas para manejar dos botones de idioma
-void setSpanish() {
-  if (!spanishLanguage) {
-    spanishLanguage = true;
-    updateLanguageLEDs();
-    if (currentState == STATE_PLAYING) {
-      stopAudio();
-    }
-  }
-}
-
-void setYokotan() {
-  if (spanishLanguage) {
-    spanishLanguage = false;
-    updateLanguageLEDs();
-    if (currentState == STATE_PLAYING) {
-      stopAudio();
-    }
-  }
-}
-
-// Resto de las funciones permanecen igual que en el código anterior
-void checkWindows() {
-  static bool lastWindowState[NUM_WINDOWS] = {false};
+void verificarVentanillas() {
+  static bool estadoAnteriorVentanillas[NUM_VENTANAS] = {false};
   
-  for (int i = 0; i < NUM_WINDOWS; i++) {
-    bool currentState = digitalRead(windowPins[i]) == LOW;
+  for (int i = 0; i < NUM_VENTANAS; i++) {
+    bool estadoActual = digitalRead(pinesVentanillas[i]) == LOW; // LOW significa abierto
     
-    if (currentState && !lastWindowState[i]) {
-      windowOpened(i);
-      highlightWindowGroup(i);
-    } else if (!currentState && lastWindowState[i]) {
-      windowClosed(i);
+    if (estadoActual && !estadoAnteriorVentanillas[i]) {
+      // Ventanilla acaba de abrirse
+      ventanillaAbierta(i);
+      resaltarGrupoVentanilla(i);
+    } else if (!estadoActual && estadoAnteriorVentanillas[i]) {
+      // Ventanilla acaba de cerrarse
+      ventanillaCerrada(i);
     }
     
-    lastWindowState[i] = currentState;
+    estadoAnteriorVentanillas[i] = estadoActual;
   }
 }
 
-void windowOpened(int windowId) {
-  int audioNumber = spanishLanguage ? (windowId + 1) : (windowId + 101);
+void ventanillaAbierta(int idVentanilla) {
+  // Determinar el número de audio según idioma
+  int numeroAudio = idiomaEspanol ? (idVentanilla + 1) : (idVentanilla + 101);
   
-  if (currentState == STATE_IDLE) {
-    playAudio(audioNumber);
+  if (estadoActual == ESTADO_INACTIVO) {
+    // Reproducir inmediatamente si no hay nada en cola
+    reproducirAudio(numeroAudio);
   } else {
-    addToQueue(audioNumber);
+    // Agregar a la cola
+    agregarACola(numeroAudio);
   }
 }
 
-void windowClosed(int windowId) {
-  int audioNumber = spanishLanguage ? (windowId + 1) : (windowId + 101);
-  removeFromQueue(audioNumber);
+void ventanillaCerrada(int idVentanilla) {
+  // Determinar el número de audio según idioma
+  int numeroAudio = idiomaEspanol ? (idVentanilla + 1) : (idVentanilla + 101);
+  
+  // Eliminar de la cola si está presente
+  eliminarDeCola(numeroAudio);
 }
 
-void playAudio(int audioNumber) {
-  myDFPlayer.play(audioNumber);
-  currentPlaying = audioNumber;
-  currentState = STATE_PLAYING;
+void reproducirAudio(int numeroAudio) {
+  reproductorMP3.play(numeroAudio);
+  audioActual = numeroAudio;
+  estadoActual = ESTADO_REPRODUCIENDO;
 }
 
-void stopAudio() {
-  myDFPlayer.stop();
-  currentState = STATE_STOPPED;
-  currentPlaying = -1;
-  clearQueue();
-  updateLanguageLEDs();
+void detenerAudio() {
+  reproductorMP3.stop();
+  estadoActual = ESTADO_DETENIDO;
+  audioActual = -1;
+  limpiarCola();
+  actualizarLEDsIdioma();
 }
 
-void addToQueue(int audioNumber) {
-  if (queueSize < 10) {
-    audioQueue[queueSize] = audioNumber;
-    queueSize++;
+void establecerEspanol() {
+  if (!idiomaEspanol) {
+    idiomaEspanol = true;
+    actualizarLEDsIdioma();
+    
+    // Si hay algo reproduciéndose, detenerlo y limpiar cola
+    if (estadoActual == ESTADO_REPRODUCIENDO) {
+      detenerAudio();
+    }
   }
 }
 
-void removeFromQueue(int audioNumber) {
-  for (int i = 0; i < queueSize; i++) {
-    if (audioQueue[i] == audioNumber) {
-      for (int j = i; j < queueSize - 1; j++) {
-        audioQueue[j] = audioQueue[j + 1];
+void establecerYokotan() {
+  if (idiomaEspanol) {
+    idiomaEspanol = false;
+    actualizarLEDsIdioma();
+    
+    // Si hay algo reproduciéndose, detenerlo y limpiar cola
+    if (estadoActual == ESTADO_REPRODUCIENDO) {
+      detenerAudio();
+    }
+  }
+}
+
+void agregarACola(int numeroAudio) {
+  if (tamanoCola < 10) {
+    colaAudios[tamanoCola] = numeroAudio;
+    tamanoCola++;
+  }
+}
+
+void eliminarDeCola(int numeroAudio) {
+  for (int i = 0; i < tamanoCola; i++) {
+    if (colaAudios[i] == numeroAudio) {
+      // Desplazar elementos restantes
+      for (int j = i; j < tamanoCola - 1; j++) {
+        colaAudios[j] = colaAudios[j + 1];
       }
-      queueSize--;
+      tamanoCola--;
       break;
     }
   }
 }
 
-void clearQueue() {
-  queueSize = 0;
+void limpiarCola() {
+  tamanoCola = 0;
 }
 
-void manageQueue() {
-  if (currentState == STATE_PLAYING) {
-    if (myDFPlayer.available()) {
-      if (myDFPlayer.readType() == DFPlayerPlayFinished) {
-        if (queueSize > 0) {
-          playAudio(audioQueue[0]);
-          for (int i = 0; i < queueSize - 1; i++) {
-            audioQueue[i] = audioQueue[i + 1];
+void gestionarCola() {
+  if (estadoActual == ESTADO_REPRODUCIENDO) {
+    // Verificar si el audio actual ha terminado
+    if (reproductorMP3.available()) {
+      if (reproductorMP3.readType() == DFPlayerPlayFinished) {
+        if (tamanoCola > 0) {
+          // Reproducir siguiente en cola
+          reproducirAudio(colaAudios[0]);
+          // Desplazar cola
+          for (int i = 0; i < tamanoCola - 1; i++) {
+            colaAudios[i] = colaAudios[i + 1];
           }
-          queueSize--;
+          tamanoCola--;
         } else {
-          currentState = STATE_IDLE;
-          currentPlaying = -1;
+          // No hay más audios en cola
+          estadoActual = ESTADO_INACTIVO;
+          audioActual = -1;
         }
       }
     }
-  } else if (currentState == STATE_IDLE && queueSize > 0) {
-    playAudio(audioQueue[0]);
-    for (int i = 0; i < queueSize - 1; i++) {
-      audioQueue[i] = audioQueue[i + 1];
+  } else if (estadoActual == ESTADO_INACTIVO && tamanoCola > 0) {
+    // Reproducir siguiente en cola si el sistema estaba inactivo
+    reproducirAudio(colaAudios[0]);
+    // Desplazar cola
+    for (int i = 0; i < tamanoCola - 1; i++) {
+      colaAudios[i] = colaAudios[i + 1];
     }
-    queueSize--;
+    tamanoCola--;
   }
 }
 
-void updateLanguageLEDs() {
-  uint32_t color = spanishLanguage ? strip.Color(0, 0, 255) : strip.Color(255, 165, 0);
+void actualizarLEDsIdioma() {
+  uint32_t color = idiomaEspanol ? tiraLED.Color(0, 0, 255) : tiraLED.Color(255, 165, 0); // Azul para español, Naranja para yokot'an
   
-  for (int i = 0; i < LED_COUNT; i++) {
-    strip.setPixelColor(i, color);
+  for (int i = 0; i < CANTIDAD_LEDS; i++) {
+    tiraLED.setPixelColor(i, color);
   }
-  strip.show();
+  tiraLED.show();
 }
 
-void highlightWindowGroup(int windowId) {
-  int group = -1;
+void resaltarGrupoVentanilla(int idVentanilla) {
+  // Determinar a qué grupo pertenece la ventanilla
+  int grupo = -1;
   for (int g = 0; g < 5; g++) {
-    for (int w = 0; w < 5; w++) {
-      if (windowGroups[g][w] == windowId) {
-        group = g;
+    for (int v = 0; v < 5; v++) {
+      if (gruposVentanillas[g][v] == idVentanilla) {
+        grupo = g;
         break;
       }
     }
-    if (group != -1) break;
+    if (grupo != -1) break;
   }
   
-  if (group != -1) {
-    for (int i = 0; i < LED_COUNT; i++) {
-      strip.setPixelColor(i, groupColors[group]);
+  if (grupo != -1) {
+    // Iluminar LEDs con el color del grupo
+    for (int i = 0; i < CANTIDAD_LEDS; i++) {
+      tiraLED.setPixelColor(i, coloresGrupos[grupo]);
     }
-    strip.show();
-    delay(500);
-    updateLanguageLEDs();
+    tiraLED.show();
+    delay(500); // Mostrar color por medio segundo
+    actualizarLEDsIdioma(); // Volver al color de idioma
   }
 }
 
-void theaterChase(uint32_t color, int wait) {
+// Efecto de teatro para LEDs durante reproducción
+void efectoTeatro(uint32_t color, int espera) {
   for (int q=0; q < 3; q++) {
-    for (int i=0; i < strip.numPixels(); i=i+3) {
-      strip.setPixelColor(i+q, color);
+    for (int i=0; i < tiraLED.numPixels(); i=i+3) {
+      tiraLED.setPixelColor(i+q, color); // Enciende cada tercer píxel
     }
-    strip.show();
-    delay(wait);
+    tiraLED.show();
+    delay(espera);
     
-    for (int i=0; i < strip.numPixels(); i=i+3) {
-      strip.setPixelColor(i+q, 0);
+    for (int i=0; i < tiraLED.numPixels(); i=i+3) {
+      tiraLED.setPixelColor(i+q, 0); // Apaga los píxeles
     }
   }
 }
