@@ -4,15 +4,15 @@
 
 // Configuración de pines
 #define PIN_LED 6
-#define CANTIDAD_LEDS 60 // Ajusta según tu tira LED
+#define CANTIDAD_LEDS 60
 #define PIN_BOTON_DETENER 2 // Botón para detener audio
 #define PIN_BOTON_ESPANOL 3 // Botón para español
 #define PIN_BOTON_YOKOTAN 4 // Botón para yokot'an
 
 // Definición de ventanillas
-#define NUM_VENTANAS 22
+#define NUM_VENTANAS 26
 const int pinesVentanillas[NUM_VENTANAS] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 
-                                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43};
+                                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47};
 
 // Configuración del reproductor MP3
 SoftwareSerial comunicacionSerial(10, 11); // RX, TX
@@ -30,7 +30,7 @@ enum EstadoSistema {
 EstadoSistema estadoActual = ESTADO_INACTIVO;
 
 // Variables para gestión de cola
-int colaAudios[10]; // Cola para audios (ajusta tamaño según necesidad)
+int colaAudios[10]; // Numero de audios
 int tamanoCola = 0;
 int audioActual = -1; // no se está reproduciendo nada
 
@@ -38,12 +38,13 @@ int audioActual = -1; // no se está reproduciendo nada
 bool idiomaEspanol = true; // true: español, false: yokot'an
 
 // Grupos de ventanillas y sus colores
-const int gruposVentanillas[][5] = {
-  {0, 1, 2, 3, 4},   // Lengua Chol
-  {5, 6, 7, 8, 9},   // Lengua Yoko'tan
-  {10, 11, 12, 13},  // Lengua Nahuatl
-  {14, 15, 16, 17},  // Lengua Tzeltales
-  {18, 19, 20, 21}   // Lengua Zoque
+const int gruposVentanillas[][6] = {
+  {0, 1, 2, 3},   // Lengua Chol
+  {4, 5, 6, 7, 8},   // Lengua Yoko'tan
+  {9, 10, 11},  // Lengua Nahuatl
+  {12, 13, 14, 15},  // Lengua Tzeltales
+  {16, 17, 18, 19, 20}, // Lengua Zoque
+  {21, 22, 23, 24}  // Lengua Ayapaneco
 };
 
 const uint32_t coloresGrupos[] = {
@@ -51,12 +52,13 @@ const uint32_t coloresGrupos[] = {
   tiraLED.Color(104, 170, 199), // Azul verdoso para Yoko'tan
   tiraLED.Color(51, 37, 159),   // Morado claro para Nahuatl
   tiraLED.Color(153, 44, 55),   // Rojo claro para Tzeltales
-  tiraLED.Color(188, 151, 222)  // Rosa para Zoque
+  tiraLED.Color(188, 151, 222), // Rosa para Zoque
+  tiraLED.Color(177, 141, 115)  // Naranja claro para Ayapaneco
 };
 
 void setup() {
   Serial.begin(9600);
-  comunicacionSerial.begin(9600);
+  comunicacionSerial.begin(115200);
   
   // Inicializar reproductor MP3
   if (!reproductorMP3.begin(comunicacionSerial)) {
@@ -126,7 +128,7 @@ void verificarVentanillas() {
 }
 
 void ventanillaAbierta(int idVentanilla) {
-  // Determinar el número de audio según idioma
+  // Numero de audio según idioma
   int numeroAudio = idiomaEspanol ? (idVentanilla + 1) : (idVentanilla + 101);
   
   if (estadoActual == ESTADO_INACTIVO) {
