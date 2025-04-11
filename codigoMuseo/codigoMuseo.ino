@@ -1,6 +1,11 @@
+// MIT License
+//  Copyright (c) 2025 alanbalfonso
+//  See LICENSE file for details.
+
 #include <DFRobotDFPlayerMini.h> // Biblioteca para el reproductor MP3
 #include <SoftwareSerial.h>
 #include <Adafruit_NeoPixel.h> // Biblioteca para la tira LED
+#include <vector>
 
 // Configuración de pines
 #define PIN_LED 6
@@ -11,8 +16,7 @@
 
 // Definición de ventanillas
 #define NUM_VENTANAS 26
-const int pinesVentanillas[NUM_VENTANAS] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 
-                                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47};
+const int pinesVentanillas[NUM_VENTANAS] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47};
 
 // Configuración del reproductor MP3
 SoftwareSerial comunicacionSerial(10, 11); // RX, TX
@@ -29,12 +33,11 @@ enum EstadoSistema {
 
 EstadoSistema estadoActual = ESTADO_INACTIVO;
 
-// Variables para gestión de cola
-int colaAudios[10]; // Numero de audios
-int tamanoCola = 0;
+// Variables para gestión de cola (utilizando vectores)
+std::vector<int> colaAudios; // Numero de audios
 int audioActual = -1; // no se está reproduciendo nada
 
-// Variables de idioma
+// Variable de idioma
 bool idiomaEspanol = true; // true: español, false: yokot'an
 
 // Grupos de ventanillas y sus colores
@@ -56,58 +59,7 @@ const uint32_t coloresGrupos[] = {
   tiraLED.Color(177, 141, 115)  // Naranja claro para Ayapaneco
 };
 
-void setup() {
-  Serial.begin(9600);
-  comunicacionSerial.begin(115200);
-  
-  // Inicializar reproductor MP3
-  if (!reproductorMP3.begin(comunicacionSerial)) {
-    Serial.println(F("No se pudo inicializar el reproductor MP3:"));
-    Serial.println(F("1. Revisa las conexiones"));
-    Serial.println(F("2. Inserta la tarjeta SD"));
-    while(true);
-  }
-  Serial.println(F("Reproductor MP3 listo."));
-  
-  reproductorMP3.volume(20); // Volumen ajustable
-
-  // Pines de ventanillas como entradas
-  for (int i = 0; i < NUM_VENTANAS; i++) {
-    pinMode(pinesVentanillas[i], INPUT_PULLUP);
-  }
-
-  // Configurar pines de botones
-  pinMode(PIN_BOTON_DETENER, INPUT_PULLUP);
-  pinMode(PIN_BOTON_ESPANOL, INPUT_PULLUP);
-  pinMode(PIN_BOTON_YOKOTAN, INPUT_PULLUP);
-
-  // Inicializar tira LED
-  tiraLED.begin();
-  tiraLED.show(); // Inicializar todos los píxeles apagados
-  actualizarLEDsIdioma();
-
-  // Configurar interrupciones para botones
-  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_DETENER), detenerAudio, FALLING);
-  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_ESPANOL), establecerEspanol, FALLING);
-  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_YOKOTAN), establecerYokotan, FALLING);
-}
-
-void loop() {
-  verificarVentanillas(); // Estado de ventanillas
-  gestionarCola();       // Gestionar reproducción de audios en cola
-  
-  // Actualizar LEDs según estado
-  if (estadoActual == ESTADO_REPRODUCIENDO) {
-    // Efecto de LEDs durante reproducción
-    efectoTeatro(tiraLED.Color(127, 127, 127), 50);
-  } else {
-    // Mostrar estado de idioma
-    actualizarLEDsIdioma();
-  }
-  
-  delay(50); // Pequeña pausa para evitar rebotes
-}
-
+// ================================= FUNCIONES =================================
 void verificarVentanillas() {
   static bool estadoAnteriorVentanillas[NUM_VENTANAS] = {false};
   
@@ -186,28 +138,25 @@ void establecerYokotan() {
   }
 }
 
+// Función para agregar un audio a la cola
 void agregarACola(int numeroAudio) {
-  if (tamanoCola < 10) {
-    colaAudios[tamanoCola] = numeroAudio;
-    tamanoCola++;
+  if (colaAudios.size() < 10) { // Límite de 10 audios
+    colaAudios.push_back(numeroAudio);
   }
 }
 
+// Función para eliminar un audio de la cola
 void eliminarDeCola(int numeroAudio) {
-  for (int i = 0; i < tamanoCola; i++) {
-    if (colaAudios[i] == numeroAudio) {
-      // Desplazar elementos restantes
-      for (int j = i; j < tamanoCola - 1; j++) {
-        colaAudios[j] = colaAudios[j + 1];
-      }
-      tamanoCola--;
+  for (auto it = colaAudios.begin(); it != colaAudios.end(); ++it) {
+    if (*it == numeroAudio) {
+      colaAudios.erase(it); // Eliminar el primer elemento que coincide
       break;
     }
   }
 }
 
 void limpiarCola() {
-  tamanoCola = 0;
+  colaAudios.clear(); // Limpiar correctamente la cola de los audios
 }
 
 void gestionarCola() {
@@ -215,29 +164,18 @@ void gestionarCola() {
     // Verificar si el audio actual ha terminado
     if (reproductorMP3.available()) {
       if (reproductorMP3.readType() == DFPlayerPlayFinished) {
-        if (tamanoCola > 0) {
-          // Reproducir siguiente en cola
-          reproducirAudio(colaAudios[0]);
-          // Desplazar cola
-          for (int i = 0; i < tamanoCola - 1; i++) {
-            colaAudios[i] = colaAudios[i + 1];
-          }
-          tamanoCola--;
+        if (!colaAudios.empty()) {
+          reproducirAudio(colaAudios.front());  // Reproducir siguiente audio
+          colaAudios.erase(colaAudios.begin()); // Eliminar de la cola
         } else {
-          // No hay más audios en cola
-          estadoActual = ESTADO_INACTIVO;
+          estadoActual = ESTADO_INACTIVO; // Ya no hay audios en la cola
           audioActual = -1;
         }
       }
     }
-  } else if (estadoActual == ESTADO_INACTIVO && tamanoCola > 0) {
-    // Reproducir siguiente en cola si el sistema estaba inactivo
-    reproducirAudio(colaAudios[0]);
-    // Desplazar cola
-    for (int i = 0; i < tamanoCola - 1; i++) {
-      colaAudios[i] = colaAudios[i + 1];
-    }
-    tamanoCola--;
+  } else if (estadoActual == ESTADO_INACTIVO && !colaAudios.empty()) {
+    reproducirAudio(colaAudios.front());  // Reproducir el siguiente audio
+    colaAudios.erase(colaAudios.begin()); // Eliminar de la cola
   }
 }
 
@@ -287,4 +225,57 @@ void efectoTeatro(uint32_t color, int espera) {
       tiraLED.setPixelColor(i+q, 0); // Apaga los píxeles
     }
   }
+}
+
+// ================================= SETUP Y LOOP =================================
+
+void setup() {
+  Serial.begin(9600);
+  comunicacionSerial.begin(115200);
+  
+  // Inicializar reproductor MP3
+  if (!reproductorMP3.begin(comunicacionSerial)) {
+    Serial.println(F("No se pudo inicializar el reproductor MP3:"));
+    Serial.println(F("1. Revisa las conexiones"));
+    Serial.println(F("2. Inserta la tarjeta SD"));
+  }
+  Serial.println(F("Reproductor MP3 listo."));
+  
+  reproductorMP3.volume(20); // Volumen ajustable
+
+  // Pines de ventanillas como entradas
+  for (int i = 0; i < NUM_VENTANAS; i++) {
+    pinMode(pinesVentanillas[i], INPUT_PULLUP);
+  }
+
+  // Configurar pines de botones
+  pinMode(PIN_BOTON_DETENER, INPUT_PULLUP);
+  pinMode(PIN_BOTON_ESPANOL, INPUT_PULLUP);
+  pinMode(PIN_BOTON_YOKOTAN, INPUT_PULLUP);
+
+  // Inicializar tira LED
+  tiraLED.begin();
+  tiraLED.show(); // Inicializar todos los píxeles apagados
+  actualizarLEDsIdioma();
+
+  // Configurar interrupciones para botones
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_DETENER), detenerAudio, FALLING);
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_ESPANOL), establecerEspanol, FALLING);
+  attachInterrupt(digitalPinToInterrupt(PIN_BOTON_YOKOTAN), establecerYokotan, FALLING);
+}
+
+void loop() {
+  verificarVentanillas(); // Estado de ventanillas
+  gestionarCola();       // Gestionar reproducción de audios en cola
+  
+  // Actualizar LEDs según estado
+  if (estadoActual == ESTADO_REPRODUCIENDO) {
+    // Efecto de LEDs durante reproducción
+    efectoTeatro(tiraLED.Color(127, 127, 127), 50);
+  } else {
+    // Mostrar estado de idioma
+    actualizarLEDsIdioma();
+  }
+  
+  delay(50); // Pequeña pausa para evitar rebotes
 }
